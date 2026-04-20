@@ -36,6 +36,47 @@ def test_high_severity_issue_drives_score_down():
     assert risk["level"] in ("medium", "high")
 
 
+def test_confidence_reduces_penalty():
+    original = "def f():\n    print('hi')\n    return True\n"
+    fixed = "import logging\n\ndef f():\n    logging.info('hi')\n    return True\n"
+
+    full = assess_risk(
+        original_code=original,
+        fixed_code=fixed,
+        issues=[{"type": "Code Quality", "severity": "Low", "msg": "print", "confidence": 1.0}],
+    )
+    half = assess_risk(
+        original_code=original,
+        fixed_code=fixed,
+        issues=[{"type": "Code Quality", "severity": "Low", "msg": "print", "confidence": 0.5}],
+    )
+    assert half["score"] >= full["score"]
+
+
+def test_length_penalty_scales_with_reduction():
+    original = "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\n"
+
+    mild_cut = "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\n"  # 80% kept
+    severe_cut = "line1\nline2\n"  # 20% kept
+
+    mild = assess_risk(original_code=original, fixed_code=mild_cut, issues=[])
+    severe = assess_risk(original_code=original, fixed_code=severe_cut, issues=[])
+
+    assert severe["score"] < mild["score"]
+
+
+def test_unknown_severity_still_penalizes():
+    original = "def f():\n    return 1\n"
+    fixed = "def f():\n    return 1\n"
+    risk = assess_risk(
+        original_code=original,
+        fixed_code=fixed,
+        issues=[{"type": "Issue", "severity": "Critical", "msg": "LLM said critical"}],
+    )
+    assert risk["score"] < 100
+    assert any("Unknown severity" in r for r in risk["reasons"])
+
+
 def test_missing_return_is_penalized():
     original = "def f(x):\n    return x + 1\n"
     fixed = "def f(x):\n    x + 1\n"

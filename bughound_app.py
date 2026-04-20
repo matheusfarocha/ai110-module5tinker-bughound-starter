@@ -190,9 +190,10 @@ if run_button:
             for i, issue in enumerate(issues, start=1):
                 issue_type = issue.get("type", "Issue")
                 severity = issue.get("severity", "Unknown")
+                confidence = issue.get("confidence", 1.0)
                 msg = issue.get("msg", "").strip()
 
-                badge = f"{issue_type} | {severity}"
+                badge = f"{issue_type} | {severity} | Confidence: {confidence:.0%}"
                 st.markdown(f"**{i}. {badge}**")
                 if msg:
                     st.write(msg)

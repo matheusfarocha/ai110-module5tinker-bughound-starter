@@ -53,7 +53,7 @@ class BugHoundAgent:
     # ----------------------------
     # Workflow steps
     # ----------------------------
-    def analyze(self, code_snippet: str) -> List[Dict[str, str]]:
+    def analyze(self, code_snippet: str) -> List[Dict[str, Any]]:
         if not self._can_call_llm():
             self._log("ANALYZE", "Using heuristic analyzer (offline mode).")
             return self._heuristic_analyze(code_snippet)
@@ -84,7 +84,7 @@ class BugHoundAgent:
 
         return issues
 
-    def propose_fix(self, code_snippet: str, issues: List[Dict[str, str]]) -> str:
+    def propose_fix(self, code_snippet: str, issues: List[Dict[str, Any]]) -> str:
         if not issues:
             self._log("ACT", "No issues, returning original code unchanged.")
             return code_snippet
@@ -123,14 +123,15 @@ class BugHoundAgent:
     # ----------------------------
     # Heuristic analyzer/fixer
     # ----------------------------
-    def _heuristic_analyze(self, code: str) -> List[Dict[str, str]]:
-        issues: List[Dict[str, str]] = []
+    def _heuristic_analyze(self, code: str) -> List[Dict[str, Any]]:
+        issues: List[Dict[str, Any]] = []
 
         if "print(" in code:
             issues.append(
                 {
                     "type": "Code Quality",
                     "severity": "Low",
+                    "confidence": 0.6,
                     "msg": "Found print statements. Consider using logging for non-toy code.",
                 }
             )
@@ -140,6 +141,7 @@ class BugHoundAgent:
                 {
                     "type": "Reliability",
                     "severity": "High",
+                    "confidence": 0.9,
                     "msg": "Found a bare `except:`. Catch a specific exception or use `except Exception as e:`.",
                 }
             )
@@ -149,13 +151,14 @@ class BugHoundAgent:
                 {
                     "type": "Maintainability",
                     "severity": "Medium",
+                    "confidence": 0.7,
                     "msg": "Found TODO comments. Unfinished logic can hide bugs or missing cases.",
                 }
             )
 
         return issues
 
-    def _heuristic_fix(self, code: str, issues: List[Dict[str, str]]) -> str:
+    def _heuristic_fix(self, code: str, issues: List[Dict[str, Any]]) -> str:
         fixed = code
 
         if any(i.get("type") == "Reliability" for i in issues):
@@ -185,15 +188,20 @@ class BugHoundAgent:
 
         return None
 
-    def _normalize_issues(self, arr: List[Any]) -> List[Dict[str, str]]:
-        issues: List[Dict[str, str]] = []
+    def _normalize_issues(self, arr: List[Any]) -> List[Dict[str, Any]]:
+        issues: List[Dict[str, Any]] = []
         for item in arr:
             if not isinstance(item, dict):
                 continue
+            try:
+                confidence = max(0.0, min(1.0, float(item.get("confidence", 1.0))))
+            except (TypeError, ValueError):
+                confidence = 1.0
             issues.append(
                 {
                     "type": str(item.get("type", "Issue")),
                     "severity": str(item.get("severity", "Unknown")),
+                    "confidence": confidence,
                     "msg": str(item.get("msg", "")).strip(),
                 }
             )

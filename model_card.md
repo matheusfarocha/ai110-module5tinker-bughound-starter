@@ -1,92 +1,85 @@
-# BugHound Mini Model Card (Reflection)
-
-Fill this out after you run BugHound in **both** modes (Heuristic and Gemini).
+# BugHound Mini Model Card
 
 ---
 
 ## 1) What is this system?
 
-**Name:** BugHound  
-**Purpose:** Analyze a Python snippet, propose a fix, and run reliability checks before suggesting whether the fix should be auto-applied.
-
-**Intended users:** Students learning agentic workflows and AI reliability concepts.
+**Name:** BugHound
+**Purpose:** Scans Python code for bugs, suggests fixes, and checks if those fixes are safe to apply automatically.
+**Intended users:** Students learning how AI agents make decisions about code.
 
 ---
 
 ## 2) How does it work?
 
-Describe the workflow in your own words (plan → analyze → act → test → reflect).  
-Include what is done by heuristics vs what is done by Gemini (if enabled).
+BugHound follows five steps:
+
+1. **Plan** — Decides to scan the code and propose a fix.
+2. **Analyze** — Looks for problems. If an AI model (Gemini) is available, it asks the AI. If not, it uses built-in pattern matching (heuristics) to find common issues like `print()` statements, bare `except:` blocks, and `TODO` comments.
+3. **Act** — Proposes a rewritten version of the code that addresses the issues found.
+4. **Test** — Scores how risky the fix is (0-100). Checks things like: did the fix remove too many lines? Did it delete return statements? Each issue's severity and confidence level affects the score.
+5. **Reflect** — If the risk score is 75 or above, the fix is considered safe to auto-apply. Otherwise, it flags the fix for human review.
+
+Heuristics handle steps 2-3 offline. Gemini handles them when an API key is set.
 
 ---
 
 ## 3) Inputs and outputs
 
 **Inputs:**
-
-- What kind of code snippets did you try?
-- What was the “shape” of the input (short scripts, functions, try/except blocks, etc.)?
+- Short Python functions and scripts (5-20 lines)
+- Tested with: clean code (`cleanish.py`), code with multiple issues (`mixed_issues.py`), and edge cases like empty files
 
 **Outputs:**
-
-- What types of issues were detected?
-- What kinds of fixes were proposed?
-- What did the risk report show?
+- A list of detected issues, each with a type, severity, confidence score, and description
+- A rewritten version of the code with fixes applied
+- A risk report with a numeric score, risk level (low/medium/high), and an autofix recommendation
 
 ---
 
 ## 4) Reliability and safety rules
 
-List at least **two** reliability rules currently used in `assess_risk`. For each:
+**Rule 1: Severity-weighted penalty**
+- Checks each issue's severity (High = -40, Medium = -20, Low = -5), scaled by confidence
+- Matters because a high-severity bug like a bare `except:` is more dangerous than a stray `print()`
+- False positive: the LLM labels something "High" that is actually harmless
+- False negative: a serious bug gets labeled "Low" and barely affects the score
 
-- What does the rule check?
-- Why might that check matter for safety or correctness?
-- What is a false positive this rule could cause?
-- What is a false negative this rule could miss?
+**Rule 2: Code length reduction check**
+- Penalizes fixes that are much shorter than the original, scaled by how much was removed
+- Matters because a fix that deletes most of the code probably broke something
+- False positive: a valid refactor that simplifies verbose code gets penalized
+- False negative: a fix that replaces correct logic with wrong logic of the same length passes undetected
 
 ---
 
 ## 5) Observed failure modes
 
-Provide at least **two** examples:
+**1. Missed issue:** An empty file produces zero issues and a score of 0. BugHound says "no fix produced" but doesn't warn that the input itself was invalid. It treats empty input the same as unfixable code.
 
-1. A time BugHound missed an issue it should have caught  
-2. A time BugHound suggested a fix that felt risky, wrong, or unnecessary  
-
-For each, include the snippet (or describe it) and what went wrong.
+**2. Silent penalty skip:** When Gemini returns a non-standard severity like "Critical" instead of "High", the risk assessor used to skip the penalty entirely. The issue appeared in the UI but had zero effect on the risk score. We fixed this by adding a default -15 penalty for unknown severities.
 
 ---
 
 ## 6) Heuristic vs Gemini comparison
 
-Compare behavior across the two modes:
-
-- What did Gemini detect that heuristics did not?
-- What did heuristics catch consistently?
-- How did the proposed fixes differ?
-- Did the risk scorer agree with your intuition?
+- **Gemini detected** logic errors, naming issues, and security concerns that pattern matching cannot catch
+- **Heuristics caught** `print()`, bare `except:`, and `TODO` every time — simple but consistent
+- **Fixes differed:** heuristic fixes are mechanical (swap `print` for `logging.info`). Gemini rewrites are more context-aware but occasionally change behavior in unexpected ways
+- **Risk scorer** sometimes disagreed with intuition — a clearly better Gemini fix could score lower than a heuristic fix because it changed more lines
 
 ---
 
 ## 7) Human-in-the-loop decision
 
-Describe one scenario where BugHound should **refuse** to auto-fix and require human review.
+**Scenario:** The fix removes or changes a `return` statement.
 
-- What trigger would you add?
-- Where would you implement it (risk_assessor vs agent workflow vs UI)?
-- What message should the tool show the user?
+- **Trigger:** If the original code has a `return` and the fixed code changes what gets returned (not just removing it entirely, which is already caught)
+- **Where:** In `risk_assessor.py`, as a new structural check
+- **Message:** "This fix modifies return values. Auto-apply is disabled — please verify the output is still correct."
 
 ---
 
 ## 8) Improvement idea
 
-Propose one improvement that would make BugHound more reliable *without* making it dramatically more complex.
-
-Examples:
-
-- A better output format and parsing strategy
-- A new guardrail rule + test
-- A more careful “minimal diff” policy
-- Better detection of changes that alter behavior
-
-Write your idea clearly and briefly.
+Add a guardrail that compares function signatures before and after the fix. If the fix changes parameter names, adds new parameters, or removes existing ones, flag it as high risk. This catches a common AI mistake (rewriting a function's interface) with a simple string comparison, no AI needed.
